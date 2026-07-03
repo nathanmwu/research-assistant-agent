@@ -1,0 +1,13 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -c \"import langgraph, langchain_google_genai, tavily, trafilatura, streamlit; print\\('imports ok'\\)\")"
+    ]
+  }
+}

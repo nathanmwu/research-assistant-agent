@@ -5,3 +5,4 @@ playwright
 trafilatura
 streamlit
 python-dotenv
+pytest

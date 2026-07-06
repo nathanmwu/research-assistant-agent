@@ -19,7 +19,7 @@ graph TD
     verify --> E([END])
 ```
 
-**Why a graph instead of a tool-calling (ReAct) agent:** a ReAct loop buries planning, retry policy, and stopping conditions inside the prompt and trajectory — you can't see them, stream them, or grade them. Here every technique is a named node, control flow is data in the state (`plan`, `cursor`, `attempts`) so the UI can render it live, and failure modes are bounded by construction.
+**Why a graph instead of a tool-calling (ReAct) agent:** a ReAct loop buries planning, retry policy, and stopping conditions inside the prompt and trajectory — you can't see them, stream them, or grade them. Here every technique is a named node, control flow is data in the state (`sub_questions`, `cursor`, `attempts`) so the UI can render it live, and failure modes are bounded by construction.
 
 ## State
 
@@ -28,7 +28,9 @@ One shared `TypedDict`; each node returns a partial update. Overwrite semantics,
 ```python
 class ResearchState(TypedDict):
     question: str               # the user's question — read by everything
-    plan: list[SubQuestion]     # written by plan; reflect may append
+    sub_questions: list[SubQuestion]  # the plan; reflect may append
+                                # (LangGraph forbids a node and a state key
+                                #  sharing a name — the node is "plan")
     cursor: int                 # index of the sub-question being researched
     attempts: int               # search rounds spent on current sub-question
     last_query: str             # what search just ran (drives the UI)
@@ -38,6 +40,7 @@ class ResearchState(TypedDict):
     findings: list[Finding]     # compressed evidence notes with [S#] refs
     draft: str                  # briefing from synthesize
     reflection_rounds: int
+    open_gaps: list[str]        # gaps reflect couldn't fill — disclosed, not dropped
     flagged: list[str]          # claims that failed the grounding audit
     final: str                  # draft + flags + Limitations section
     history: list[dict]         # prior Q/briefing pairs, for follow-ups
@@ -78,7 +81,7 @@ Routers are pure functions of state — they never mutate (LangGraph silently di
 | sub-question cursor | `MAX_SUB_QUESTIONS` | 5 |
 | reflection gap rounds | `MAX_REFLECTION_ROUNDS` | 1 (+ ≤`MAX_GAP_QUESTIONS`=2 questions) |
 
-Plus: `READS_PER_SUB_Q=2`, `SOURCE_CHAR_LIMIT=8000`, `PAGE_TIMEOUT_S=15`. Worst case ≈ 21 searches / ~25 LLM calls, knowable before running. Typical run: 6–8 searches, ~17 calls, 2–5 minutes.
+Plus: `RESULTS_PER_SEARCH=5`, `READS_PER_SUB_Q=2`, `SOURCE_CHAR_LIMIT=8000`, `PAGE_TIMEOUT_S=15`. Worst case ≈ 21 searches / ~25 LLM calls, knowable before running. Typical run: 6–8 searches, ~17 calls, 2–5 minutes.
 
 ## Streaming
 
@@ -100,12 +103,13 @@ research-assistant-agent/
 │   ├── config.py     # keys (dotenv), model id, all loop caps        [phase 0 ✓]
 │   ├── llm.py        # Gemini client + structured() — the one model
 │   │                 #   seam; __main__ is the smoke test            [phase 0 ✓]
-│   ├── state.py      # ResearchState + TypedDict output schemas      [phase 1]
-│   ├── nodes.py      # 7 node functions + 2 routers + their prompts  [phases 1–4]
-│   ├── graph.py      # build_graph(): wiring only, ~30 lines         [phase 1]
-│   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1, 3]
-├── cli.py            # dev runner / stream printer                   [phase 1]
+│   ├── state.py      # ResearchState + TypedDict output schemas      [phase 1 ✓]
+│   ├── nodes.py      # node functions + routers + their prompts      [phases 1 ✓ – 4]
+│   ├── graph.py      # build_graph(): wiring only, ~30 lines         [phase 1 ✓]
+│   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1 ✓, 3]
+├── cli.py            # dev runner / stream printer                   [phase 1 ✓]
 ├── app.py            # Streamlit UI                                  [phase 5]
+├── test_graph.py     # offline control-flow tests                    [phases 1 ✓, 2]
 ├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4]
 ├── CLAUDE.md · architecture.md · project_spec.md
 ├── requirements.txt · .env.example · .env (gitignored)
@@ -125,3 +129,4 @@ research-assistant-agent/
 - **`thin` status instead of endless retries** — weak coverage is disclosed, not hidden.
 - **Sequential, not parallel** — the streamed narrative is the product; `Send` fan-out would garble it.
 - **Native structured output (Gemini)** — deletes the JSON parse/retry layer entirely; schemas are flat TypedDicts.
+- **All model I/O normalized at the seam** — `llm.py` wraps every call in retry-on-5xx, and `text_of()` flattens the newer models' content-part lists to plain text; no node or UI code ever handles either concern.

@@ -106,10 +106,11 @@ research-assistant-agent/
 │   ├── state.py      # ResearchState + TypedDict output schemas      [phase 1 ✓]
 │   ├── nodes.py      # node functions + routers + their prompts      [phases 1 ✓ – 4]
 │   ├── graph.py      # build_graph(): wiring only, ~30 lines         [phase 1 ✓]
-│   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1 ✓, 3]
+│   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1 ✓, 3 ✓]
 ├── cli.py            # dev runner / stream printer                   [phase 1 ✓]
 ├── app.py            # Streamlit UI                                  [phase 5]
-├── test_graph.py     # offline control-flow tests                    [phases 1 ✓, 2]
+├── test_graph.py     # offline control-flow tests                    [phases 1 ✓, 2 ✓]
+├── test_tools.py     # reading fallback-chain tests                  [phase 3 ✓]
 ├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4]
 ├── CLAUDE.md · architecture.md · project_spec.md
 ├── requirements.txt · .env.example · .env (gitignored)
@@ -130,3 +131,4 @@ research-assistant-agent/
 - **Sequential, not parallel** — the streamed narrative is the product; `Send` fan-out would garble it.
 - **Native structured output (Gemini)** — deletes the JSON parse/retry layer entirely; schemas are flat TypedDicts.
 - **All model I/O normalized at the seam** — `llm.py` wraps every call in retry-on-5xx, and `text_of()` flattens the newer models' content-part lists to plain text; no node or UI code ever handles either concern.
+- **Two-tier models** — plumbing judgments (plan/read/evaluate/reflect) run on the lite tier; `synthesize`, the prose the user reads and only 1–2 calls per run, runs on premium flash. Quality where it shows, quota where it's cheap.

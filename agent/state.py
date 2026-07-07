@@ -23,7 +23,7 @@ class Source(TypedDict):
     url: str
     title: str
     content: str  # cleaned page text, truncated to SOURCE_CHAR_LIMIT
-    via: str      # "tavily" now; "playwright" arrives in Phase 3
+    via: str      # "playwright" (rendered) | "tavily" (raw_content) | "snippet"
 
 
 class Finding(TypedDict):

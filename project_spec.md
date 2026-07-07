@@ -11,7 +11,7 @@ See [architecture.md](architecture.md) for the graph, state, and node design.
 | Technology | Why |
 |---|---|
 | **Python + LangGraph** | The explicit named-node graph is the point: plan → search → read → evaluate → synthesize → reflect → verify as readable, streamable control flow. No other LangChain machinery beyond what it pulls in. |
-| **Gemini via `langchain-google-genai`** | **Native structured output** — every schema'd call is `with_structured_output(TypedDict)`, which deletes an entire pipeline step (no JSON-in-prompt, no parse-and-retry helper, no pydantic layer). Chosen over Gemma for exactly this reason. Dev default is `gemini-3.1-flash-lite` (full flash's free tier proved to be 20 req/day — one run needs ~20–40 calls; lite tiers have real headroom). Override per run with `GEMINI_MODEL=…`; `agent/llm.py` is the single model seam and wraps every call in retry-on-5xx. |
+| **Gemini via `langchain-google-genai`** | **Native structured output** — every schema'd call is `with_structured_output(TypedDict)`, which deletes an entire pipeline step (no JSON-in-prompt, no parse-and-retry helper, no pydantic layer). Chosen over Gemma for exactly this reason. **Two-tier by design** (chosen 2026-07-07): plumbing calls (plan/read/evaluate/reflect) run on `gemini-3.1-flash-lite`, whose free quota covers a ~20–40-call run; `synthesize` — the 1–2 calls the reader actually sees — runs on premium `gemini-2.5-flash` (its 20 req/day still covers 10+ runs at that rate). Overrides: `GEMINI_MODEL` / `GEMINI_SMART_MODEL`. `agent/llm.py` is the single model seam and wraps every call in retry-on-5xx. Considered and deferred by choice: batched page compression, a client-side rate limiter, paid tier + parallel fan-out (the demo-day switch). |
 | **Tavily** | Search API built for agents: clean ranked results, and `include_raw_content=True` returns extracted page text — the MVP's "reading" and the permanent fallback when scraping fails. |
 | **Playwright** | Full-page reading for JS-rendered content. Used narrowly: render, hand off HTML. Headless Chromium, 15s hard timeout, no retries. |
 | **trafilatura** | Rendered HTML → clean article text in one call. `BeautifulSoup.get_text()` returns nav/footer soup that would poison the grounding audit. |
@@ -36,11 +36,11 @@ One phase ≈ one sitting; each ends as a reviewable, runnable piece with its "d
 Replace `advance` with real `evaluate` (verdict + refined query + attempts cap + `thin` marking); add `reflect` + gap-append + re-synthesize; routers enforce caps. Extend `test_graph.py`: the three evaluate outcomes, the attempts cap, reflect's gap-append/cursor property.
 **Done when:** an obscure question visibly triggers ≥1 refined search; caps hold (≤3 attempts/sub-question, ≤1 reflection round); a gap round appends questions and the briefing gains those sections; `pytest` green. ✅ Passed: the dyscalculia question triggered 6 refined searches (never a 4th attempt), 3 thin markings, one gap round (+2 sub-questions, revised briefing with both new sections), and a budget-stop that disclosed 2 open gaps; 18 offline tests green.
 
-### Phase 3 — Real reading ☐ (next)
+### Phase 3 — Real reading ✅ (done 2026-07-07)
 `read_page()` in `agent/tools.py`: Playwright → trafilatura, fallback chain (→ `raw_content` → snippet), URL dedupe, non-HTML skip. `playwright install chromium` happens here. `test_tools.py` covers the fallback chain with a faked Playwright failure; `python -m agent.tools` becomes the live fetch smoke.
-**Done when:** a JS-heavy page extracts clean text; a forced timeout degrades gracefully without killing the run; `pytest` green.
+**Done when:** a JS-heavy page extracts clean text; a forced timeout degrades gracefully without killing the run; `pytest` green. ✅ Passed: `python -m agent.tools` extracted 1,071 clean chars from a JS-only page and returned None (no crash) on a forced timeout; live EdTech run read 10/10 sources via playwright (`runs/20260707-141613.log`); 25 offline tests green.
 
-### Phase 4 — Grounding guardrail ☐
+### Phase 4 — Grounding guardrail ☐ (next)
 `verify` node: mechanical citation pass (regex) + one-call audit + inline `⚠` flags + Limitations assembly into `final`. Plus `test_verify.py`.
 **Done when:** a test draft with (a) a fake citation id and (b) a fabricated claim gets both caught — (a) mechanically, (b) by the audit. This test must never break.
 
@@ -62,7 +62,7 @@ Session source registry + follow-up planning mode (1–2 targeted sub-questions,
 | Schema drift | Native structured output parses; keep schemas flat TypedDicts anyway. |
 | Parallelism temptation | Sequential only — the streamed narrative is the product. |
 | Streamlit rerun model | One blocking stream loop per run; pin results in `session_state`; no threads/async. |
-| Free-tier quota burn | Phase-1 disk cache makes dev runs replayable; Tavily's ~1000 credits/mo is plenty with it. |
+| Free-tier quota burn | Phase-1 disk cache makes dev runs replayable (Tavily ~1000 credits/mo is plenty with it); two-tier models keep LLM quota inside free limits — premium flash only ever pays for synthesis. |
 | Prompt sprawl | Prompts are f-string constants next to their node. No template engine, no prompt files. |
 
 ## Testing strategy

@@ -15,7 +15,7 @@ from agent.config import (
     MAX_ATTEMPTS_PER_SUB_Q, MAX_GAP_QUESTIONS, MAX_REFLECTION_ROUNDS,
     MAX_SUB_QUESTIONS, READS_PER_SUB_Q, SOURCE_CHAR_LIMIT,
 )
-from agent.llm import llm, structured, text_of
+from agent.llm import llm, smart_llm, structured, text_of
 from agent.state import (
     Evaluation, Finding, PageNotes, Reflection, ResearchPlan, ResearchState,
     Source, SubQuestion,
@@ -85,6 +85,11 @@ Page: {title} ({url})
 def read(state: ResearchState) -> dict:
     """Read the top unseen results and compress each into a Finding.
 
+    Reading is a fallback chain, best text first: Playwright-rendered page
+    (via="playwright") → Tavily's raw_content extraction (via="tavily") →
+    the search snippet (via="snippet"). The chain never raises — every rung
+    just degrades the evidence quality one step.
+
     Compress-at-read is the load-bearing decision: downstream nodes only ever
     see these bounded, quote-bearing notes — raw page text never leaves this
     node. Dedupe is by URL against the global source registry; ids are
@@ -103,9 +108,15 @@ def read(state: ResearchState) -> dict:
             continue
         known.add(r["url"])
         added += 1
-        text = (r["raw_content"] or r["content"])[:SOURCE_CHAR_LIMIT]
+        page_text = tools.read_page(r["url"])
+        if page_text:
+            text, via = page_text, "playwright"
+        elif r["raw_content"]:
+            text, via = r["raw_content"], "tavily"
+        else:
+            text, via = r["content"], "snippet"
         src = Source(id=len(sources) + 1, url=r["url"], title=r["title"],
-                     content=text, via="tavily")
+                     content=text[:SOURCE_CHAR_LIMIT], via=via)
         sources.append(src)
         notes = structured(PageNotes).invoke(NOTES_PROMPT.format(
             sub_question=sub_q["question"], source_id=src["id"],
@@ -199,8 +210,9 @@ Sources on record:
 def synthesize(state: ResearchState) -> dict:
     """Write the briefing from findings only — never raw sources.
 
-    Plain llm.invoke (not structured): free-form markdown, and it lets
-    stream_mode="messages" surface the tokens live.
+    Plain invoke (not structured): free-form markdown, and it lets
+    stream_mode="messages" surface the tokens live. Runs on the premium
+    tier — this is the prose the user reads, and it's only 1-2 calls/run.
     """
     subs = "\n".join(f"{sq['id']}. {sq['question']}  [{sq['status']}]"
                      for sq in state["sub_questions"])
@@ -208,7 +220,7 @@ def synthesize(state: ResearchState) -> dict:
                         for f in state["findings"])
     srcs = "\n".join(f"[S{s['id']}] {s['title']} — {s['url']}"
                      for s in state["sources"])
-    msg = llm.invoke(SYNTHESIZE_PROMPT.format(
+    msg = smart_llm.invoke(SYNTHESIZE_PROMPT.format(
         question=state["question"], sub_questions=subs,
         findings=notes, source_list=srcs,
     ))

@@ -2,7 +2,7 @@
 from google.genai.errors import ServerError
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from agent.config import MODEL
+from agent.config import MODEL, SMART_MODEL
 
 # A 20-call research run must survive one transient 5xx; retry only server
 # errors (4xx bugs should fail loudly), with exponential backoff + jitter.
@@ -11,6 +11,9 @@ _RETRY = dict(retry_if_exception_type=(ServerError,),
 
 _model = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 llm = _model.with_retry(**_RETRY)
+
+# The premium tier, reserved for the prose the user actually reads (synthesize).
+smart_llm = ChatGoogleGenerativeAI(model=SMART_MODEL, temperature=0).with_retry(**_RETRY)
 
 
 def structured(schema: type):
@@ -31,7 +34,7 @@ def text_of(content) -> str:
                    for p in content)
 
 
-if __name__ == "__main__":  # smoke test: python -m agent.llm
+if __name__ == "__main__":  # smoke test (both tiers): python -m agent.llm
     from typing import TypedDict
 
     class Capital(TypedDict):
@@ -40,4 +43,7 @@ if __name__ == "__main__":  # smoke test: python -m agent.llm
 
     out = structured(Capital).invoke("What is the capital of France?")
     assert out["capital"].strip().lower().startswith("paris"), out
-    print(f"smoke ok: {out}")
+    streamed = "".join(text_of(c.content)
+                       for c in smart_llm.stream("Reply with exactly: smart ok"))
+    assert "smart ok" in streamed.lower(), streamed
+    print(f"smoke ok: fast={MODEL} {out} | smart={SMART_MODEL} {streamed!r}")

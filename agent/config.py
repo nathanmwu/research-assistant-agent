@@ -5,9 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()  # GOOGLE_API_KEY, TAVILY_API_KEY
 
-# ponytail: lite tier — full flash's free quota (20 req/day) can't cover one
-# ~20-call run. For demo-day prose quality: GEMINI_MODEL=gemini-2.5-flash (paid).
+# Two-tier models. Plumbing calls (plan/read/evaluate/reflect) run on the lite
+# tier, whose free quota covers a ~20-40 call run. synthesize — the 1-2 calls
+# per run the reader actually sees — runs on premium flash: its small free
+# daily quota (20 req/day on this key) still covers 10+ runs at that rate.
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+SMART_MODEL = os.getenv("GEMINI_SMART_MODEL", "gemini-2.5-flash")
 
 # Loop caps. Worst case is knowable before a run: ~21 searches, ~25 LLM calls.
 MAX_SUB_QUESTIONS = 5

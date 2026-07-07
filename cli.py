@@ -77,7 +77,7 @@ def main() -> None:
                       f"→ {len(delta['results'])} results")
             elif node == "read":
                 for src in delta["sources"][n_sources:]:
-                    print(f"📄 read [S{src['id']}] {src['title']} ({src['url']})")
+                    print(f"📄 read [S{src['id']}] {src['title']} ({src['url']}) · {src['via']}")
                 n_sources = len(delta["sources"])
             elif node == "evaluate":
                 if delta.get("next_query"):

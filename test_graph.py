@@ -170,6 +170,7 @@ def test_search_consumes_pending_refined_query(monkeypatch):
 # --- read (dedupe, numbering, cap, relevance, transient results) ---------------
 
 def test_read_dedupes_numbers_globally_and_caps(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: None)  # force fallbacks
     monkeypatch.setattr(nodes, "structured",
                         lambda schema: FakeStructured({"relevant": True, "notes": "- fact [S2]"}))
     s = state_with_plan()
@@ -180,12 +181,25 @@ def test_read_dedupes_numbers_globally_and_caps(monkeypatch):
     assert [src["url"] for src in out["sources"]] == [
         "https://a.com", "https://b.com", "https://c.com"]  # a deduped; b, c added (cap = 2)
     assert [src["id"] for src in out["sources"]] == [1, 2, 3]  # ids global + stable
-    assert out["sources"][1]["content"] == "snippet b"  # empty raw_content -> snippet fallback
+    assert out["sources"][1]["content"] == "snippet b"  # no raw_content -> snippet
+    assert [src["via"] for src in out["sources"][1:]] == ["snippet", "tavily"]
     assert len(out["findings"]) == 2
     assert out["results"] == []  # transient channel cleared
 
 
+def test_read_prefers_rendered_page_over_fallbacks(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: "rendered page text")
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"relevant": True, "notes": "- x [S1]"}))
+    s = state_with_plan()
+    s["results"] = RESULTS[:1]
+    out = nodes.read(s)
+    assert out["sources"][0]["content"] == "rendered page text"
+    assert out["sources"][0]["via"] == "playwright"
+
+
 def test_read_drops_irrelevant_pages(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: None)
     monkeypatch.setattr(nodes, "structured",
                         lambda schema: FakeStructured({"relevant": False, "notes": ""}))
     s = state_with_plan()

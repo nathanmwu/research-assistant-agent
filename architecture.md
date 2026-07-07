@@ -104,14 +104,15 @@ research-assistant-agent/
 │   ├── llm.py        # Gemini client + structured() — the one model
 │   │                 #   seam; __main__ is the smoke test            [phase 0 ✓]
 │   ├── state.py      # ResearchState + TypedDict output schemas      [phase 1 ✓]
-│   ├── nodes.py      # node functions + routers + their prompts      [phases 1 ✓ – 4]
+│   ├── nodes.py      # node functions + routers + their prompts      [phases 1–4 ✓]
 │   ├── graph.py      # build_graph(): wiring only, ~30 lines         [phase 1 ✓]
 │   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1 ✓, 3 ✓]
 ├── cli.py            # dev runner / stream printer                   [phase 1 ✓]
-├── app.py            # Streamlit UI                                  [phase 5]
+├── app.py            # Streamlit UI                                  [phase 5 ✓]
+├── test_app.py       # UI pure-function test                         [phase 5 ✓]
 ├── test_graph.py     # offline control-flow tests                    [phases 1 ✓, 2 ✓]
 ├── test_tools.py     # reading fallback-chain tests                  [phase 3 ✓]
-├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4]
+├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4 ✓]
 ├── CLAUDE.md · architecture.md · project_spec.md
 ├── requirements.txt · .env.example · .env (gitignored)
 └── README.md         # graph diagram, demo GIF                       [phase 6]

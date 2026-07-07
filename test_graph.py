@@ -49,8 +49,8 @@ def test_reflect_router_reenters_loop_after_gap_append():
     assert nodes.route_after_reflect(state_with_plan(4, cursor=2)) == "search"
 
 
-def test_reflect_router_done_when_no_gaps_appended():
-    assert nodes.route_after_reflect(state_with_plan(2, cursor=2)) == "done"
+def test_reflect_router_exits_to_verify_when_no_gaps_appended():
+    assert nodes.route_after_reflect(state_with_plan(2, cursor=2)) == "verify"
 
 
 # --- evaluate (the loop's brain: three outcomes + the invariant) ---------------
@@ -134,7 +134,7 @@ def test_reflect_budget_spent_discloses_open_gaps(monkeypatch):
     s["reflection_rounds"] = 1  # == MAX_REFLECTION_ROUNDS
     out = nodes.reflect(s)
     assert out == {"open_gaps": ["gap A"]}  # no append, no extra round
-    assert nodes.route_after_reflect({**s, **out}) == "done"
+    assert nodes.route_after_reflect({**s, **out}) == "verify"
 
 
 def test_reflect_answered_is_done(monkeypatch):

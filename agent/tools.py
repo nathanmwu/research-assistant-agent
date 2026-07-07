@@ -12,7 +12,7 @@ from pathlib import Path
 import trafilatura
 from tavily import TavilyClient
 
-from agent.config import PAGE_TIMEOUT_S, RESULTS_PER_SEARCH
+from agent.config import HEADLESS, PAGE_TIMEOUT_S, RESULTS_PER_SEARCH
 
 _CACHE_DIR = Path(".cache")
 _client = None  # lazy: importing this module must not require an API key
@@ -69,7 +69,7 @@ def _fetch_rendered(url: str) -> str | None:
     from playwright.sync_api import sync_playwright  # heavy import: only when scraping
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=HEADLESS)
         try:
             page = browser.new_page(user_agent=_UA)
             resp = page.goto(url, timeout=PAGE_TIMEOUT_S * 1000)

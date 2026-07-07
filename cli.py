@@ -5,6 +5,8 @@ Streams two channels from one graph run (stream_mode=["updates", "messages"]):
 - messages: (token_chunk, metadata) live from LLM calls inside nodes -> we
   print only the synthesize node's tokens, so the briefing types itself out.
 """
+import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -35,8 +37,13 @@ def main() -> None:
         sys.exit('usage: python cli.py "your research question"')
     question = " ".join(sys.argv[1:])
 
+    # Log naming convention: RUN_LABEL wins (e.g. RUN_LABEL=phase4-dyscalculia),
+    # else a slug of the question. Reused labels get a time suffix, never clobbered.
     Path("runs").mkdir(exist_ok=True)
-    log_path = Path("runs") / f"{datetime.now():%Y%m%d-%H%M%S}.log"
+    label = os.getenv("RUN_LABEL") or re.sub(r"[^a-z0-9]+", "-", question.lower()).strip("-")[:40].rstrip("-")
+    log_path = Path("runs") / f"{label}.log"
+    if log_path.exists():
+        log_path = Path("runs") / f"{label}-{datetime.now():%H%M%S}.log"
     log = log_path.open("w")
     sys.stdout = _Tee(sys.__stdout__, log)
     sys.stderr = _Tee(sys.__stderr__, log)  # tracebacks land in the log too
@@ -102,6 +109,18 @@ def main() -> None:
                         print(f"   ? {g}")
                 else:
                     print("🪞 reflection: the briefing answers the question")
+            elif node == "verify":
+                if delta["flagged"]:
+                    print(f"🛡 grounding: {len(delta['flagged'])} issue(s) → Limitations")
+                    for f in delta["flagged"]:
+                        print(f"   ⚠ {f}")
+                else:
+                    print("🛡 grounding: every claim checks out")
+                # the briefing streamed as the draft; the Limitations section is
+                # the only part of `final` the reader hasn't seen yet
+                parts = delta["final"].split("## Limitations")
+                if len(parts) == 2:
+                    print("\n## Limitations" + parts[1])
 
     print("─" * 60)
     print(f"✅ done — {n_sources} sources read")

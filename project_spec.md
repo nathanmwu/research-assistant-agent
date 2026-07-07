@@ -38,17 +38,17 @@ Replace `advance` with real `evaluate` (verdict + refined query + attempts cap +
 
 ### Phase 3 — Real reading ✅ (done 2026-07-07)
 `read_page()` in `agent/tools.py`: Playwright → trafilatura, fallback chain (→ `raw_content` → snippet), URL dedupe, non-HTML skip. `playwright install chromium` happens here. `test_tools.py` covers the fallback chain with a faked Playwright failure; `python -m agent.tools` becomes the live fetch smoke.
-**Done when:** a JS-heavy page extracts clean text; a forced timeout degrades gracefully without killing the run; `pytest` green. ✅ Passed: `python -m agent.tools` extracted 1,071 clean chars from a JS-only page and returned None (no crash) on a forced timeout; live EdTech run read 10/10 sources via playwright (`runs/20260707-141613.log`); 25 offline tests green.
+**Done when:** a JS-heavy page extracts clean text; a forced timeout degrades gracefully without killing the run; `pytest` green. ✅ Passed: `python -m agent.tools` extracted 1,071 clean chars from a JS-only page and returned None (no crash) on a forced timeout; live EdTech run read 10/10 sources via playwright (`runs/phase3-edtech.log`); 25 offline tests green.
 
-### Phase 4 — Grounding guardrail ☐ (next)
+### Phase 4 — Grounding guardrail ✅ (done 2026-07-07)
 `verify` node: mechanical citation pass (regex) + one-call audit + inline `⚠` flags + Limitations assembly into `final`. Plus `test_verify.py`.
-**Done when:** a test draft with (a) a fake citation id and (b) a fabricated claim gets both caught — (a) mechanically, (b) by the audit. This test must never break.
+**Done when:** a test draft with (a) a fake citation id and (b) a fabricated claim gets both caught — (a) mechanically, (b) by the audit. This test must never break. ✅ Passed: both catches in `test_verify.py` (31 tests, audit regression runs live and caught the fabricated 73% claim); live dyscalculia run flagged a real partial-support claim [S17] and assembled thin+gaps+flags into Limitations (`runs/phase4-dyscalculia.log`).
 
-### Phase 5 — Streamlit UI ☐
+### Phase 5 — Streamlit UI ✅ (done 2026-07-07)
 `app.py`: live timeline (plan checklist, searches, sources), token-streamed briefing, results pinned in `st.session_state`.
-**Done when:** a browser visitor watches the plan, searches, and reads appear live, and the briefing token-streams into place.
+**Done when:** a browser visitor watches the plan, searches, and reads appear live, and the briefing token-streams into place. ✅ 33 tests green; the visual done-when performed live by Nathan (demo instance on :8502 with `HEADLESS=0` — visible Chromium windows per source read). UI runs leave their own artifact at `runs/ui-<slug>.log`.
 
-### Phase 6 — Follow-ups & portfolio polish ☐
+### Phase 6 — Follow-ups & portfolio polish ☐ (deferred — project wrapped at Phase 5 on 2026-07-07; the session-state foundation for follow-ups is already in app.py, and a README + graph PNG remain the highest-value next steps)
 Session source registry + follow-up planning mode (1–2 targeted sub-questions, citation numbering continues); README with auto-generated graph diagram (`graph.get_graph().draw_mermaid_png()`), demo GIF, one example briefing, export-to-markdown.
 **Done when:** a follow-up reuses sources with continuous numbering; the README sells the project without a live demo.
 

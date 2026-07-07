@@ -10,16 +10,25 @@ LangGraph concepts:
 Seam rule (project_spec.md): all I/O goes through `tools.tavily_search`,
 `structured`, or `llm`, so tests monkeypatch exactly those three names.
 """
+import re
+
 from agent import tools
 from agent.config import (
     MAX_ATTEMPTS_PER_SUB_Q, MAX_GAP_QUESTIONS, MAX_REFLECTION_ROUNDS,
     MAX_SUB_QUESTIONS, READS_PER_SUB_Q, SOURCE_CHAR_LIMIT,
 )
-from agent.llm import llm, smart_llm, structured, text_of
+from agent.llm import smart_llm, structured, text_of
 from agent.state import (
-    Evaluation, Finding, PageNotes, Reflection, ResearchPlan, ResearchState,
-    Source, SubQuestion,
+    Evaluation, Finding, GroundingAudit, PageNotes, Reflection, ResearchPlan,
+    ResearchState, Source, SubQuestion,
 )
+
+
+def _findings_block(state: ResearchState) -> str:
+    """The compressed evidence, formatted once — synthesize writes from it,
+    verify audits against it. Same text both times, by construction."""
+    return "\n\n".join(f"(sub-question {f['sub_q_id']})\n{f['notes']}"
+                       for f in state["findings"])
 
 PLAN_PROMPT = """\
 You are planning web research to answer a question.
@@ -216,17 +225,14 @@ def synthesize(state: ResearchState) -> dict:
     """
     subs = "\n".join(f"{sq['id']}. {sq['question']}  [{sq['status']}]"
                      for sq in state["sub_questions"])
-    notes = "\n\n".join(f"(sub-question {f['sub_q_id']})\n{f['notes']}"
-                        for f in state["findings"])
     srcs = "\n".join(f"[S{s['id']}] {s['title']} — {s['url']}"
                      for s in state["sources"])
     msg = smart_llm.invoke(SYNTHESIZE_PROMPT.format(
         question=state["question"], sub_questions=subs,
-        findings=notes, source_list=srcs,
+        findings=_findings_block(state), source_list=srcs,
     ))
     text = text_of(msg.content)
-    # final == draft until verify (Phase 4) starts appending flags/limitations
-    return {"draft": text, "final": text}
+    return {"draft": text, "final": text}  # verify replaces final
 
 
 REFLECT_PROMPT = """\
@@ -288,6 +294,86 @@ def reflect(state: ResearchState) -> dict:
 
 
 def route_after_reflect(state: ResearchState) -> str:
-    """Gap questions appended -> back into the research loop; otherwise done.
-    (Phase 4 remaps "done" to the verify node.)"""
-    return "search" if state["cursor"] < len(state["sub_questions"]) else "done"
+    """Gap questions appended -> back into the research loop; otherwise the
+    grounding guardrail gets the last word."""
+    return "search" if state["cursor"] < len(state["sub_questions"]) else "verify"
+
+
+_CITE_RE = re.compile(r"\[S(\d+)\]")
+
+
+def _citation_issues(draft: str, valid_ids: set[int]) -> list[str]:
+    """Mechanical grounding layer — regex, deterministic, no model can talk
+    its way past it.
+
+    Two rules: every [S#] must resolve to a registered source, and every
+    substantial line (>=100 chars, outside headings and the source list)
+    must carry at least one citation. Short transition lines are exempt —
+    a heuristic tuned to catch claims, not prose glue.
+    """
+    issues = []
+    cited = {int(n) for n in _CITE_RE.findall(draft)}
+    for bad in sorted(cited - valid_ids):
+        issues.append(f"citation [S{bad}] does not match any source on record")
+    body = draft.split("## Sources")[0]  # the source list itself isn't a claim
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if len(line) >= 100 and not _CITE_RE.search(line):
+            issues.append(f'uncited passage: "{line[:80]}…"')
+    return issues
+
+
+VERIFY_PROMPT = """\
+You are auditing a research briefing for grounding before delivery.
+
+Draft briefing:
+{draft}
+
+The findings the draft was written from — its ONLY permitted evidence:
+{findings}
+
+For each factual claim in the draft that cites a source [S#], check whether
+that source's findings actually support the claim as written. Report ONLY
+problem claims:
+- verdict "partial": the findings support a weaker or narrower version
+- verdict "unsupported": the findings do not contain this claim at all
+For each, quote the claim briefly (under 25 words) and give the [S#] number
+it cites. If every cited claim is supported, return an empty audits list —
+that is the ideal outcome, not a failure."""
+
+
+def verify(state: ResearchState) -> dict:
+    """The grounding guardrail: flag, never fix.
+
+    Layer 1 (mechanical, free): citation ids resolve + substantial passages
+    are cited. Layer 2 (one LLM call): every cited claim checked against the
+    quote-bearing findings. Failures are marked ⚠ inline (best effort) and
+    assembled — with thin sub-questions and reflect's open gaps — into a
+    Limitations section. Deliberately no verify→search loop: re-researching
+    at the last mile reopens unbounded work; disclosure closes it.
+    """
+    valid = {s["id"] for s in state["sources"]}
+    flagged = _citation_issues(state["draft"], valid)
+
+    audit = structured(GroundingAudit).invoke(VERIFY_PROMPT.format(
+        draft=state["draft"], findings=_findings_block(state)))
+
+    final = state["draft"]
+    for a in audit["audits"]:
+        if a["verdict"] == "supported":
+            continue  # defensive: the prompt asks for problems only
+        flagged.append(f"[S{a['source_id']}] does not fully support: "
+                       f"\"{a['claim']}\" — {a['verdict']}")
+        final = final.replace(a["claim"], f"{a['claim']} ⚠", 1)  # best-effort inline mark
+
+    limitations = (
+        [f"- Evidence ran thin on: {sq['question']}"
+         for sq in state["sub_questions"] if sq["status"] == "thin"]
+        + [f"- Not covered (research budget spent): {g}" for g in state["open_gaps"]]
+        + [f"- ⚠ {f}" for f in flagged]
+    )
+    if limitations:
+        final += "\n\n## Limitations\n" + "\n".join(limitations)
+    return {"flagged": flagged, "final": final}

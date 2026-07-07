@@ -1,6 +1,6 @@
 """Graph wiring — nothing else. The shape IS the demo:
 
-    plan → (search → read → evaluate)* → synthesize → reflect
+    plan → (search → read → evaluate)* → synthesize → reflect → verify
               ↑__________________________________________|   (gap round)
 
 LangGraph concepts:
@@ -23,6 +23,7 @@ def build_graph():
     g.add_node("evaluate", nodes.evaluate)
     g.add_node("synthesize", nodes.synthesize)
     g.add_node("reflect", nodes.reflect)
+    g.add_node("verify", nodes.verify)
 
     g.add_edge(START, "plan")
     g.add_edge("plan", "search")
@@ -32,5 +33,6 @@ def build_graph():
                             {"search": "search", "synthesize": "synthesize"})
     g.add_edge("synthesize", "reflect")
     g.add_conditional_edges("reflect", nodes.route_after_reflect,
-                            {"search": "search", "done": END})  # Phase 4: "done" -> verify
+                            {"search": "search", "verify": "verify"})
+    g.add_edge("verify", END)
     return g.compile()

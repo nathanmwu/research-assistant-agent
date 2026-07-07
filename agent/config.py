@@ -12,6 +12,9 @@ load_dotenv()  # GOOGLE_API_KEY, TAVILY_API_KEY
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 SMART_MODEL = os.getenv("GEMINI_SMART_MODEL", "gemini-2.5-flash")
 
+# HEADLESS=0 pops a visible Chromium window per source read (demo/debug mode).
+HEADLESS = os.getenv("HEADLESS", "1") != "0"
+
 # Loop caps. Worst case is knowable before a run: ~21 searches, ~25 LLM calls.
 MAX_SUB_QUESTIONS = 5
 MAX_ATTEMPTS_PER_SUB_Q = 3  # 1 initial + 2 refined searches

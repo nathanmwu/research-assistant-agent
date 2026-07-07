@@ -84,3 +84,13 @@ class Evaluation(TypedDict):
 class Reflection(TypedDict):
     answered: bool
     gaps: list[PlannedSubQuestion]  # material gaps only; may be empty
+
+
+class ClaimAudit(TypedDict):
+    claim: str      # brief quote of the problem claim from the draft
+    source_id: int  # the [S#] the draft cites for it
+    verdict: str    # "partial" | "unsupported"
+
+
+class GroundingAudit(TypedDict):
+    audits: list[ClaimAudit]  # ONLY claims that are not fully supported

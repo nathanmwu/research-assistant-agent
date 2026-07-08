@@ -25,11 +25,17 @@ class _Tee:
 
     def write(self, s):
         for st in self.streams:
-            st.write(s)
+            try:
+                st.write(s)
+            except BrokenPipeError:
+                pass  # console pipe died (e.g. `| head`) — the run and log go on
 
     def flush(self):
         for st in self.streams:
-            st.flush()
+            try:
+                st.flush()
+            except BrokenPipeError:
+                pass
 
 
 def main() -> None:
@@ -47,10 +53,11 @@ def main() -> None:
     log = log_path.open("w")
     sys.stdout = _Tee(sys.__stdout__, log)
     sys.stderr = _Tee(sys.__stderr__, log)  # tracebacks land in the log too
-    print(f"❓ {question}")
+    print(f"Question: {question}")
 
     graph = build_graph()
     n_sources = 0          # how many sources we've already announced
+    n_searches = 0         # run-wide search counter (attempts reset per sub-question)
     briefing_started = False
     revised = False        # a gap round happened; next briefing is v2
 
@@ -68,63 +75,64 @@ def main() -> None:
             text = text_of(msg.content)
             if text:
                 if not briefing_started:
-                    title = "📝 briefing (revised)" if revised else "📝 briefing"
-                    print(f"\n{title}\n" + "─" * 60)
+                    title = "Briefing (revised)" if revised else "Briefing"
+                    print(f"\n{title}\n" + "-" * 60)
                     briefing_started = True
                 print(text, end="", flush=True)
             continue
 
         for node, delta in chunk.items():
             if node == "plan":
-                print("🧭 plan")
+                print(f"Planned {len(delta['sub_questions'])} sub-questions:")
                 for sq in delta["sub_questions"]:
                     print(f"   {sq['id']}. {sq['question']}\n      why: {sq['rationale']}")
             elif node == "search":
-                print(f"🔍 search #{delta['attempts']}: \"{delta['last_query']}\" "
-                      f"→ {len(delta['results'])} results")
+                n_searches += 1
+                print(f"Search #{n_searches}: \"{delta['last_query']}\" "
+                      f"-> {len(delta['results'])} results")
             elif node == "read":
                 for src in delta["sources"][n_sources:]:
-                    print(f"📄 read [S{src['id']}] {src['title']} ({src['url']}) · {src['via']}")
+                    print(f"Read [S{src['id']}] {src['title']} ({src['url']}) via {src['via']}")
                 n_sources = len(delta["sources"])
             elif node == "evaluate":
                 if delta.get("next_query"):
-                    print(f"🔁 not enough yet — refining: \"{delta['next_query']}\"")
+                    print(f"Insufficient, refining: \"{delta['next_query']}\"")
                 else:
                     sq = delta["sub_questions"][delta["cursor"] - 1]
-                    mark = "✅" if sq["status"] == "answered" else "⚠️"
-                    print(f"{mark} sub-question {sq['id']}/{len(delta['sub_questions'])} "
+                    print(f"Sub-question {sq['id']}/{len(delta['sub_questions'])} "
                           f"{sq['status']}")
+                    print("-" * 30)  # divider: this sub-question's chapter is closed
             elif node == "synthesize":
                 print()  # close the briefing's token stream
             elif node == "reflect":
                 if "sub_questions" in delta:
                     gaps = [sq for sq in delta["sub_questions"] if sq["status"] == "pending"]
-                    print("🪞 reflection: material gaps — extending research")
+                    print("Reflection: material gaps, extending research:")
                     for sq in gaps:
-                        print(f"   +{sq['id']}. {sq['question']}")
+                        print(f"   + {sq['id']}. {sq['question']}")
                     briefing_started, revised = False, True
                 elif delta.get("open_gaps"):
-                    print("🪞 reflection: gaps remain but budget spent — will disclose:")
+                    print("Reflection: gaps remain, budget spent, disclosing:")
                     for g in delta["open_gaps"]:
                         print(f"   ? {g}")
                 else:
-                    print("🪞 reflection: the briefing answers the question")
+                    print("Reflection: the briefing answers the question")
             elif node == "verify":
                 if delta["flagged"]:
-                    print(f"🛡 grounding: {len(delta['flagged'])} issue(s) → Limitations")
+                    print(f"Grounding: {len(delta['flagged'])} issue(s) flagged in Limitations")
                     for f in delta["flagged"]:
-                        print(f"   ⚠ {f}")
+                        print(f"   ! {f}")
                 else:
-                    print("🛡 grounding: every claim checks out")
+                    print("Grounding: every claim checks out")
                 # the briefing streamed as the draft; the Limitations section is
                 # the only part of `final` the reader hasn't seen yet
                 parts = delta["final"].split("## Limitations")
                 if len(parts) == 2:
                     print("\n## Limitations" + parts[1])
 
-    print("─" * 60)
-    print(f"✅ done — {n_sources} sources read")
-    print(f"📁 full log: {log_path}")
+    print("-" * 60)
+    print(f"Done: {n_sources} sources read")
+    print(f"Log: {log_path}")
 
 
 if __name__ == "__main__":

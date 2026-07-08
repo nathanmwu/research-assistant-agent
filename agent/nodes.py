@@ -349,9 +349,9 @@ def verify(state: ResearchState) -> dict:
 
     Layer 1 (mechanical, free): citation ids resolve + substantial passages
     are cited. Layer 2 (one LLM call): every cited claim checked against the
-    quote-bearing findings. Failures are marked ⚠ inline (best effort) and
-    assembled — with thin sub-questions and reflect's open gaps — into a
-    Limitations section. Deliberately no verify→search loop: re-researching
+    quote-bearing findings. Failures are marked [unverified] inline (best
+    effort) and assembled — with thin sub-questions and reflect's open gaps —
+    into a Limitations section. Deliberately no verify→search loop: re-researching
     at the last mile reopens unbounded work; disclosure closes it.
     """
     valid = {s["id"] for s in state["sources"]}
@@ -366,13 +366,13 @@ def verify(state: ResearchState) -> dict:
             continue  # defensive: the prompt asks for problems only
         flagged.append(f"[S{a['source_id']}] does not fully support: "
                        f"\"{a['claim']}\" — {a['verdict']}")
-        final = final.replace(a["claim"], f"{a['claim']} ⚠", 1)  # best-effort inline mark
+        final = final.replace(a["claim"], f"{a['claim']} [unverified]", 1)  # best-effort inline mark
 
     limitations = (
         [f"- Evidence ran thin on: {sq['question']}"
          for sq in state["sub_questions"] if sq["status"] == "thin"]
         + [f"- Not covered (research budget spent): {g}" for g in state["open_gaps"]]
-        + [f"- ⚠ {f}" for f in flagged]
+        + [f"- Flagged: {f}" for f in flagged]
     )
     if limitations:
         final += "\n\n## Limitations\n" + "\n".join(limitations)

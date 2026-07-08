@@ -19,15 +19,15 @@ from agent.graph import build_graph
 from agent.llm import text_of
 from agent.state import initial_state
 
-_STATUS_ICON = {"pending": "⬜", "answered": "✅", "thin": "⚠️"}
+_STATUS_ICON = {"pending": "[ ]", "answered": "[x]", "thin": "[!]"}
 
 
 def _plan_markdown(subs: list[dict], cursor: int) -> str:
-    """The plan as a live checklist; the row under research gets the spinner."""
-    lines = ["#### 🧭 Research plan"]
+    """The plan as a live checklist; the row under research gets the [>] marker."""
+    lines = ["#### Research plan"]
     for i, sq in enumerate(subs):
-        icon = "🔄" if i == cursor and sq["status"] == "pending" else _STATUS_ICON[sq["status"]]
-        lines.append(f"{icon} **{sq['id']}.** {sq['question']}")
+        icon = "[>]" if i == cursor and sq["status"] == "pending" else _STATUS_ICON[sq["status"]]
+        lines.append(f"`{icon}` **{sq['id']}.** {sq['question']}")
     return "\n\n".join(lines)
 
 
@@ -36,8 +36,8 @@ def _slug(text: str) -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Research Assistant", page_icon="🔎", layout="wide")
-    st.title("🔎 Autonomous Research Assistant")
+    st.set_page_config(page_title="Research Assistant", layout="wide")
+    st.title("Autonomous Research Assistant")
     st.caption("plan → search → read → evaluate → synthesize → reflect → verify · "
                "a LangGraph agent that shows its work · a run takes 2–5 minutes")
 
@@ -46,7 +46,7 @@ def main() -> None:
     if not question:
         last = st.session_state.get("last")
         if last:  # rerun after completion — keep showing the finished briefing
-            st.markdown(f"**❓ {last['question']}**")
+            st.markdown(f"**{last['question']}**")
             col_main, col_feed = st.columns([3, 2])
             col_main.markdown(last["final"])
             with col_feed:
@@ -55,7 +55,7 @@ def main() -> None:
                     st.markdown("\n\n".join(last["events"]))
         return
 
-    st.markdown(f"**❓ {question}**")
+    st.markdown(f"**{question}**")
     col_main, col_feed = st.columns([3, 2])
     plan_panel = col_feed.empty()
     feed = col_feed.status("researching…", expanded=True)
@@ -66,6 +66,7 @@ def main() -> None:
     events: list[str] = []  # mirrors the feed; written to runs/ at the end
     acc, revised, final = "", False, ""
     n_sources = 0
+    n_searches = 0  # run-wide counter (state's attempts resets per sub-question)
 
     def log(line: str) -> None:
         events.append(line)
@@ -84,7 +85,7 @@ def main() -> None:
             tok = text_of(msg.content)
             if tok:
                 acc += tok
-                head = "## 📝 Briefing (revised)\n\n" if revised else "## 📝 Briefing\n\n"
+                head = "## Briefing (revised)\n\n" if revised else "## Briefing\n\n"
                 briefing_panel.markdown(head + acc + " ▌")
             continue
 
@@ -92,51 +93,52 @@ def main() -> None:
             if node == "plan":
                 subs, cursor = delta["sub_questions"], 0
                 plan_panel.markdown(_plan_markdown(subs, cursor))
-                log(f"🧭 planned {len(subs)} sub-questions")
+                log(f"Planned {len(subs)} sub-questions")
             elif node == "search":
-                log(f"🔍 search #{delta['attempts']}: “{delta['last_query']}” "
-                    f"→ {len(delta['results'])} results")
+                n_searches += 1
+                log(f"Search #{n_searches}: \"{delta['last_query']}\" "
+                    f"-> {len(delta['results'])} results")
             elif node == "read":
                 for src in delta["sources"][n_sources:]:
-                    log(f"📄 [S{src['id']}] [{src['title']}]({src['url']}) · {src['via']}")
+                    log(f"Read [S{src['id']}] [{src['title']}]({src['url']}) via {src['via']}")
                 n_sources = len(delta["sources"])
             elif node == "evaluate":
                 if delta.get("next_query"):
-                    log(f"🔁 not enough yet — refining: “{delta['next_query']}”")
+                    log(f"Insufficient, refining: \"{delta['next_query']}\"")
                 else:
                     subs, cursor = delta["sub_questions"], delta["cursor"]
                     plan_panel.markdown(_plan_markdown(subs, cursor))
                     done = subs[delta["cursor"] - 1]
-                    icon = "✅" if done["status"] == "answered" else "⚠️"
-                    log(f"{icon} sub-question {done['id']} {done['status']}")
+                    log(f"Sub-question {done['id']} {done['status']}")
+                    log("---")  # divider: chapter closed
             elif node == "reflect":
                 if "sub_questions" in delta:
                     subs = delta["sub_questions"]
                     plan_panel.markdown(_plan_markdown(subs, cursor))
                     gaps = [sq for sq in subs if sq["status"] == "pending"]
-                    log("🪞 reflection: material gaps — extending research: "
-                        + " · ".join(sq["question"] for sq in gaps))
+                    log("Reflection: material gaps, extending research: "
+                        + " / ".join(sq["question"] for sq in gaps))
                     acc, revised = "", True  # next synthesize streams a fresh draft
                 elif delta.get("open_gaps"):
-                    log("🪞 reflection: gaps remain, budget spent — disclosed in Limitations")
+                    log("Reflection: gaps remain, budget spent, disclosed in Limitations")
                 else:
-                    log("🪞 reflection: the briefing answers the question")
+                    log("Reflection: the briefing answers the question")
             elif node == "verify":
                 final = delta["final"]
                 for f in delta["flagged"]:
-                    log(f"⚠ {f}")
+                    log(f"! {f}")
                 verdict = (f"{len(delta['flagged'])} issue(s) flagged"
                            if delta["flagged"] else "every claim checks out")
-                log(f"🛡 grounding: {verdict}")
+                log(f"Grounding: {verdict}")
 
-    head = "## 📝 Briefing (revised)\n\n" if revised else "## 📝 Briefing\n\n"
+    head = "## Briefing (revised)\n\n" if revised else "## Briefing\n\n"
     briefing_panel.markdown(head + (final or acc))  # final = draft + Limitations
-    feed.update(label=f"done — {n_sources} sources read", state="complete")
+    feed.update(label=f"Done: {n_sources} sources read", state="complete")
 
     # Transparency rule: every run leaves a full artifact in runs/.
     Path("runs").mkdir(exist_ok=True)
     (Path("runs") / f"ui-{_slug(question)}.log").write_text(
-        f"❓ {question}\n" + "\n".join(events) + "\n\n" + (final or acc) + "\n")
+        f"Question: {question}\n" + "\n".join(events) + "\n\n" + (final or acc) + "\n")
 
     st.session_state.last = {"question": question, "final": final or acc,
                              "subs": subs, "events": events}

@@ -86,7 +86,7 @@ Plus: `RESULTS_PER_SEARCH=5`, `READS_PER_SUB_Q=2`, `SOURCE_CHAR_LIMIT=8000`, `PA
 ## Streaming
 
 `graph.stream(state, stream_mode=["updates", "messages"])`:
-- `updates` — `{node_name: state_delta}` per completed node → the live timeline (plan checklist, `🔍 query`, `📄 source`, verdicts, flags).
+- `updates` — `{node_name: state_delta}` per completed node → the live timeline (plan checklist, searches, sources with their `via` labels, verdicts, flags).
 - `messages` — token stream, filtered to `metadata["langgraph_node"] == "synthesize"` → the briefing types itself out progressively.
 
 The CLI and the Streamlit UI consume the identical stream. In Streamlit the run is one blocking loop within a single script run, results pinned to `st.session_state` (Streamlit reruns the whole script per interaction — no threads, no async).
@@ -114,8 +114,9 @@ research-assistant-agent/
 ├── test_tools.py     # reading fallback-chain tests                  [phase 3 ✓]
 ├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4 ✓]
 ├── CLAUDE.md · architecture.md · project_spec.md
+├── assets/graph.png  # auto-generated from the compiled graph        [phase 6 ✓]
 ├── requirements.txt · .env.example · .env (gitignored)
-└── README.md         # graph diagram, demo GIF                       [phase 6]
+└── README.md         # portfolio front door: PNG + real run excerpt  [phase 6 ✓]
 ```
 
 `nodes.py` stays one file so the agent reads top-to-bottom — a portfolio feature, not laziness. Split only past ~400 lines.

@@ -48,9 +48,9 @@ Replace `advance` with real `evaluate` (verdict + refined query + attempts cap +
 `app.py`: live timeline (plan checklist, searches, sources), token-streamed briefing, results pinned in `st.session_state`.
 **Done when:** a browser visitor watches the plan, searches, and reads appear live, and the briefing token-streams into place. ✅ 33 tests green; the visual done-when performed live by Nathan (demo instance on :8502 with `HEADLESS=0` — visible Chromium windows per source read). UI runs leave their own artifact at `runs/ui-<slug>.log`.
 
-### Phase 6 — Follow-ups & portfolio polish ☐ (deferred — project wrapped at Phase 5 on 2026-07-07; the session-state foundation for follow-ups is already in app.py, and a README + graph PNG remain the highest-value next steps)
-Session source registry + follow-up planning mode (1–2 targeted sub-questions, citation numbering continues); README with auto-generated graph diagram (`graph.get_graph().draw_mermaid_png()`), demo GIF, one example briefing, export-to-markdown.
-**Done when:** a follow-up reuses sources with continuous numbering; the README sells the project without a live demo.
+### Phase 6 — Portfolio polish ✅ (done 2026-07-07 — rescoped by choice: follow-up questions dropped; their session-state foundation remains in app.py)
+Monochrome output pass — emojis replaced with ASCII markers and capitalized action labels across CLI, UI, logs, and the briefing's `[unverified]` flags; run-wide search numbering plus per-sub-question dividers in the stream; headless by default again; `_Tee` hardened against dead console pipes; `README.md` with auto-generated `assets/graph.png` and a real run excerpt.
+**Done when:** the README sells the project without a live demo; the stream reads cleanly. ✅ 34 tests green; final verification run (`runs/phase6-edtech.log`) shows the new format end-to-end, including a populated Limitations section with real audit catches.
 
 ## Complexity traps → pre-committed exits
 

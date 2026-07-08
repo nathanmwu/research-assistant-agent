@@ -62,7 +62,7 @@ def test_verify_assembles_flags_and_limitations(monkeypatch):
 
     assert any("[S7]" in f for f in out["flagged"])              # mechanical layer
     assert any("73% improvement" in f for f in out["flagged"])   # audit layer
-    assert "a 73% improvement ⚠" in out["final"]                 # inline mark landed
+    assert "a 73% improvement [unverified]" in out["final"]      # inline mark landed
     assert "## Limitations" in out["final"]
     assert "Evidence ran thin on: sub 2" in out["final"]
     assert "Not covered (research budget spent): an unanswered gap question" in out["final"]

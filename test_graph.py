@@ -246,6 +246,24 @@ def test_tee_mirrors_writes_to_all_streams():
     assert a.getvalue() == b.getvalue() == "hello"
 
 
+def test_tee_survives_a_dead_console_pipe():
+    # `cli.py | head` closes stdout early; the run and its log must go on
+    import io
+    from cli import _Tee
+
+    class DeadPipe:
+        def write(self, s):
+            raise BrokenPipeError
+        def flush(self):
+            raise BrokenPipeError
+
+    log = io.StringIO()
+    tee = _Tee(DeadPipe(), log)
+    tee.write("still logged")
+    tee.flush()
+    assert log.getvalue() == "still logged"
+
+
 # --- graph shape ----------------------------------------------------------------
 
 def test_graph_compiles_with_expected_nodes():

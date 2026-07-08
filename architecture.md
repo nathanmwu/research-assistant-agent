@@ -109,10 +109,11 @@ research-assistant-agent/
 │   └── tools.py      # tavily_search(), read_page(), dev cache       [phases 1 ✓, 3 ✓]
 ├── cli.py            # dev runner / stream printer                   [phase 1 ✓]
 ├── app.py            # Streamlit UI                                  [phase 5 ✓]
-├── test_app.py       # UI pure-function test                         [phase 5 ✓]
-├── test_graph.py     # offline control-flow tests                    [phases 1 ✓, 2 ✓]
-├── test_tools.py     # reading fallback-chain tests                  [phase 3 ✓]
-├── test_verify.py    # fabricated-claim guardrail regression test    [phase 4 ✓]
+├── tests/
+│   ├── test_graph.py   # control flow: routers, invariants, caps     [phases 1–2 ✓]
+│   ├── test_tools.py   # reading fallback chain                      [phase 3 ✓]
+│   ├── test_verify.py  # fabricated-claim guardrail regression       [phase 4 ✓]
+│   └── test_app.py     # the UI's pure formatter                     [phase 5 ✓]
 ├── CLAUDE.md · architecture.md · project_spec.md
 ├── assets/graph.png  # auto-generated from the compiled graph        [phase 6 ✓]
 ├── requirements.txt · .env.example · .env (gitignored)

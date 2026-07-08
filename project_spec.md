@@ -83,7 +83,7 @@ Why this split: the system has two failure classes that need opposite treatment.
 | `verify` mechanical layer: fake `[S#]` id, uncited paragraph | The deterministic half of the guardrail | Pure-function tests. (Phase 4) |
 | `verify` audit catches a fabricated claim | The guardrail's reason to exist | The one live-LLM test; auto-skips when no API key is present. (Phase 4) |
 
-Test files sit flat at repo root (`test_graph.py`, `test_tools.py`, `test_verify.py`) — pytest auto-discovers them. `pytest` joins `requirements.txt` in Phase 1.
+Test files live in `tests/` — pytest auto-discovers them; run `python -m pytest` from the repo root so the project modules are importable. `pytest` joins `requirements.txt` in Phase 1.
 
 ### Test-shaped design rules (from Phase 1 onward)
 

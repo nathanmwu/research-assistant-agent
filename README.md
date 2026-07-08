@@ -11,13 +11,32 @@ A LangGraph agent that turns a research question into a structured, cited briefi
 - **Reflection** — the draft is graded against the original question; material gaps become new sub-questions that re-enter the ordinary research loop. Unfixable gaps are disclosed in the final output, never dropped.
 - **Hallucination guardrail** — a deterministic citation check (every [S#] must resolve; substantial passages must be cited) plus an LLM audit of each claim against the findings. Failures are marked `[unverified]` and listed in a Limitations section: flagged, not silently fixed.
 
-## How it works
+## Architecture
 
 Seven named nodes, two conditional routers, three loops — every loop capped in `agent/config.py`, so the worst case (~21 searches, ~25 LLM calls) is known before a run starts:
 
 ![Agent graph](assets/graph.png)
 
 Control flow lives in state (`sub_questions`, `cursor`, `attempts`), which is what makes the run streamable: the CLI and the Streamlit UI are both thin dispatches over the same `stream_mode=["updates", "messages"]` event stream. Design details and the reasoning behind each decision: [architecture.md](architecture.md). Build history with per-phase reports: [project_spec.md](project_spec.md) and [reports/](reports/).
+
+## Project structure
+
+    agent/
+        config.py       all knobs in one place: keys, model ids, loop caps
+        llm.py          the single model seam: two tiers, retry-on-5xx, content normalizer
+        state.py        shared graph state + structured-output schemas (TypedDicts)
+        nodes.py        the seven node functions, their prompts, and both routers
+        graph.py        graph wiring only
+        tools.py        external I/O: Tavily search, Playwright page reading, dev cache
+    tests/              offline suite (faked seams) + one live guardrail regression
+    cli.py              dev runner; every run leaves a full log in runs/
+    app.py              Streamlit UI — a thin dispatch over the same event stream
+    assets/             graph diagram, auto-generated from the compiled graph
+    architecture.md     the design and the reasoning behind each decision
+    project_spec.md     stack rationale, phased build plan, status
+    reports/            per-phase build reports with evidence and incidents
+
+`nodes.py` deliberately stays a single file so the whole agent reads top to bottom.
 
 ## Example run
 
@@ -77,7 +96,7 @@ A run takes 2–5 minutes on free-tier quotas: expect roughly 5–20 searches, 1
 
 All tests are deterministic and offline — control flow, loop caps, the reading fallback chain, and the mechanical citation layer are exercised with faked seams — except one: the audit regression runs against the real model to prove the guardrail catches a fabricated claim, and auto-skips when no API key is configured.
 
-## Honest limitations
+## Limitations
 
-The LLM audit is judgment, not proof: the guardrail makes fabrication unlikely and visible, not impossible. The structural work happens upstream — synthesis only ever sees quote-bearing findings, and the mechanical citation layer is incorruptible. Uncited-passage detection is a length heuristic that errs on the disclosing side. Briefing quality is bounded by what a web search can reach in a few minutes; when the evidence runs out, the briefing says so.
+The LLM audit is judgment based: the guardrail makes fabrication unlikely and visible, not impossible. Synthesis only ever sees quote-bearing findings, and the mechanical citation layer is incorruptible. Uncited-passage detection is a length heuristic that errs on the disclosing side. Briefing quality is bounded by what a web search can reach in a few minutes; when the evidence runs out, the briefing says so.
 

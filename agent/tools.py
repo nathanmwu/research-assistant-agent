@@ -8,11 +8,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 import trafilatura
 from tavily import TavilyClient
 
-from agent.config import HEADLESS, PAGE_TIMEOUT_S, RESULTS_PER_SEARCH
+from agent.config import (
+    ACADEMIC_DOMAINS, HEADLESS, PAGE_TIMEOUT_S, RESULTS_PER_SEARCH, UGC_DOMAINS,
+)
 
 _CACHE_DIR = Path(".cache")
 _client = None  # lazy: importing this module must not require an API key
@@ -35,18 +38,42 @@ def _cached(kind: str, key: str, fetch):
     return out
 
 
+def source_kind(url: str) -> str:
+    """Factual label for a URL: "academic" | "social" | "web".
+
+    Deliberately not a policy: whether academic sources are *preferred* is the
+    planner's per-sub-question judgment. Social is checked first — a .edu-hosted
+    social mirror should still count as social.
+    """
+    host = urlparse(url).netloc.lower().split(":")[0]
+
+    def matches(domains):
+        return any(host == d.lstrip(".") or host.endswith(d if d.startswith(".") else f".{d}")
+                   for d in domains)
+
+    if matches(UGC_DOMAINS):
+        return "social"
+    if matches(ACADEMIC_DOMAINS):
+        return "academic"
+    return "web"
+
+
 def tavily_search(query: str) -> list[dict]:
     """Top web results as [{url, title, content, raw_content}, ...].
 
     `content` is Tavily's snippet; `raw_content` is its extraction of the full
-    page text — Phase 1's "reading", and the permanent fallback once Playwright
-    lands in Phase 3.
+    page text — the permanent fallback when Playwright can't read a page.
+    UGC/social domains are excluded at the API so they never enter the
+    pipeline; the cache key includes the exclusion list because it changes
+    what the same query returns.
     """
     def fetch():
         global _client
         if _client is None:
             _client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-        resp = _client.search(query, max_results=RESULTS_PER_SEARCH, include_raw_content=True)
+        resp = _client.search(query, max_results=RESULTS_PER_SEARCH,
+                              include_raw_content=True,
+                              exclude_domains=list(UGC_DOMAINS))
         return [
             {
                 "url": r["url"],
@@ -57,7 +84,7 @@ def tavily_search(query: str) -> list[dict]:
             for r in resp["results"]
         ]
 
-    return _cached("search", query, fetch)
+    return _cached("search", f"{query}|exclude={','.join(UGC_DOMAINS)}", fetch)
 
 
 def _fetch_rendered(url: str) -> str | None:

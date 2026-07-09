@@ -52,6 +52,10 @@ Replace `advance` with real `evaluate` (verdict + refined query + attempts cap +
 Monochrome output pass — emojis replaced with ASCII markers and capitalized action labels across CLI, UI, logs, and the briefing's `[unverified]` flags; run-wide search numbering plus per-sub-question dividers in the stream; headless by default again; `_Tee` hardened against dead console pipes; `README.md` with auto-generated `assets/graph.png` and a real run excerpt.
 **Done when:** the README sells the project without a live demo; the stream reads cleanly. ✅ 34 tests green; final verification run (`runs/phase6-edtech.log`) shows the new format end-to-end, including a populated Limitations section with real audit catches.
 
+### Phase 7 — Source credibility, question-aware ✅ (done 2026-07-08)
+Prompted by a LinkedIn post being cited as [S1]. Social/UGC banned twice (Tavily `exclude_domains` + a hard skip in `read()` — if only UGC exists, the sub-question goes thin and is disclosed). The planner's existing call now judges, per sub-question, whether scholarly evidence is warranted (`evidence: academic|general`); `read()` sorts academic-first only under that preference; `evaluate` steers refined queries scholarly when the preference is unmet; `verify` mechanically discloses unmet preferences in Limitations. `source_kind(url)` labels domains factually — policy from judgment, labels from facts. Zero new LLM calls; the search cache key now includes the exclusion list.
+**Done when:** an academic-flavored question visibly prefers scholarly sources; a landscape question keeps normal web behavior; zero UGC in any log. ✅ 43 tests green; `runs/phase7-fractions.log` (3/4 sub-questions marked academic — IES, Sage, PMC, .edu, ScienceDirect reads — plus a fired disclosure for the one that couldn't be met); `runs/phase7-edtech.log` (landscape sub-questions stayed general with industry sources; empirical ones went academic; UGC grep = 0).
+
 ## Complexity traps → pre-committed exits
 
 | Trap | Exit |

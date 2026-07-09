@@ -18,10 +18,11 @@ class FakeStructured:
         return self.payload
 
 
-def state_with_plan(n=2, cursor=0):
+def state_with_plan(n=2, cursor=0, evidence="general"):
     s = initial_state("test question")
     s["sub_questions"] = [
-        {"id": i + 1, "question": f"sub {i + 1}", "rationale": "r", "status": "pending"}
+        {"id": i + 1, "question": f"sub {i + 1}", "rationale": "r",
+         "status": "pending", "evidence": evidence}
         for i in range(n)
     ]
     s["cursor"] = cursor
@@ -121,6 +122,7 @@ def test_reflect_appends_capped_gaps_and_cursor_picks_them_up(monkeypatch):
     assert len(subs) == 4                        # 3 gaps capped to MAX_GAP_QUESTIONS=2
     assert [sq["id"] for sq in subs[2:]] == [3, 4]  # ids continue, never reused
     assert all(sq["status"] == "pending" for sq in subs[2:])
+    assert all(sq["evidence"] in ("academic", "general") for sq in subs[2:])
     assert out["reflection_rounds"] == 1
     merged = {**s, **out}
     assert nodes.route_after_reflect(merged) == "search"  # cursor 2 < 4: loop re-enters
@@ -219,6 +221,62 @@ def test_plan_caps_size_and_initializes_statuses(monkeypatch):
     assert len(subs) == 5  # MAX_SUB_QUESTIONS
     assert [sq["id"] for sq in subs] == [1, 2, 3, 4, 5]
     assert all(sq["status"] == "pending" for sq in subs)
+    assert all(sq["evidence"] == "general" for sq in subs)  # missing field -> safe default
+
+
+def test_plan_normalizes_evidence_judgments(monkeypatch):
+    payload = {"sub_questions": [
+        {"question": "q1", "rationale": "r", "evidence": "Academic sources"},
+        {"question": "q2", "rationale": "r", "evidence": "general web"},
+        {"question": "q3", "rationale": "r", "evidence": "who knows"},
+    ]}
+    monkeypatch.setattr(nodes, "structured", lambda schema: FakeStructured(payload))
+    subs = nodes.plan(initial_state("q"))["sub_questions"]
+    assert [sq["evidence"] for sq in subs] == ["academic", "general", "general"]
+
+
+# --- read: source credibility policies -------------------------------------------
+
+MIXED = [
+    {"url": "https://someblog.com/post", "title": "Blog", "content": "c", "raw_content": "r"},
+    {"url": "https://www.linkedin.com/pulse/x", "title": "LI", "content": "c", "raw_content": "r"},
+    {"url": "https://ies.ed.gov/paper", "title": "Gov", "content": "c", "raw_content": "r"},
+    {"url": "https://another.com/a", "title": "Web2", "content": "c", "raw_content": "r"},
+]
+
+
+def test_read_never_reads_social_sources(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: None)
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"relevant": True, "notes": "- x [S1]"}))
+    s = state_with_plan()
+    s["results"] = [MIXED[1]]  # only a LinkedIn post on offer
+    out = nodes.read(s)
+    assert out["sources"] == []   # goes hungry rather than citing social
+    assert out["findings"] == []
+
+
+def test_read_prefers_academic_when_subquestion_asks(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: None)
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"relevant": True, "notes": "- x [S1]"}))
+    s = state_with_plan(evidence="academic")
+    s["results"] = MIXED
+    out = nodes.read(s)
+    urls = [src["url"] for src in out["sources"]]
+    assert urls == ["https://ies.ed.gov/paper", "https://someblog.com/post"]
+    assert [src["kind"] for src in out["sources"]] == ["academic", "web"]
+
+
+def test_read_keeps_tavily_order_for_general_evidence(monkeypatch):
+    monkeypatch.setattr(nodes.tools, "read_page", lambda url: None)
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"relevant": True, "notes": "- x [S1]"}))
+    s = state_with_plan(evidence="general")
+    s["results"] = MIXED
+    out = nodes.read(s)
+    urls = [src["url"] for src in out["sources"]]
+    assert urls == ["https://someblog.com/post", "https://ies.ed.gov/paper"]  # rank order, LI skipped
 
 
 # --- text normalization ---------------------------------------------------------

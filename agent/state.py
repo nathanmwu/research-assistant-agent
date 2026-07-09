@@ -15,7 +15,8 @@ class SubQuestion(TypedDict):
     id: int
     question: str
     rationale: str
-    status: str  # pending | answered | thin
+    status: str    # pending | answered | thin
+    evidence: str  # "academic" (scholarly backing warranted) | "general" — the planner's call
 
 
 class Source(TypedDict):
@@ -24,6 +25,7 @@ class Source(TypedDict):
     title: str
     content: str  # cleaned page text, truncated to SOURCE_CHAR_LIMIT
     via: str      # "playwright" (rendered) | "tavily" (raw_content) | "snippet"
+    kind: str     # "academic" | "web" — factual label from source_kind(); social is never registered
 
 
 class Finding(TypedDict):
@@ -64,6 +66,7 @@ def initial_state(question: str) -> ResearchState:
 class PlannedSubQuestion(TypedDict):
     question: str
     rationale: str
+    evidence: str  # "academic" | "general"
 
 
 class ResearchPlan(TypedDict):

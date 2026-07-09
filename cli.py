@@ -85,14 +85,17 @@ def main() -> None:
             if node == "plan":
                 print(f"Planned {len(delta['sub_questions'])} sub-questions:")
                 for sq in delta["sub_questions"]:
-                    print(f"   {sq['id']}. {sq['question']}\n      why: {sq['rationale']}")
+                    ev = " [academic]" if sq["evidence"] == "academic" else ""
+                    print(f"   {sq['id']}. {sq['question']}{ev}\n      why: {sq['rationale']}")
             elif node == "search":
                 n_searches += 1
                 print(f"Search #{n_searches}: \"{delta['last_query']}\" "
                       f"-> {len(delta['results'])} results")
             elif node == "read":
                 for src in delta["sources"][n_sources:]:
-                    print(f"Read [S{src['id']}] {src['title']} ({src['url']}) via {src['via']}")
+                    kind = " [academic]" if src["kind"] == "academic" else ""
+                    print(f"Read [S{src['id']}] {src['title']} ({src['url']}) "
+                          f"via {src['via']}{kind}")
                 n_sources = len(delta["sources"])
             elif node == "evaluate":
                 if delta.get("next_query"):

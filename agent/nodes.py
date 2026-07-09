@@ -41,19 +41,34 @@ a competent generalist write a complete briefing. Rules:
   comparisons, and evidence.
 - rationale: one sentence on why the main question cannot be answered
   without this sub-question.
+- evidence: "academic" when the sub-question concerns effectiveness, measured
+  outcomes, mechanisms, or scientific consensus — claims that need scholarly
+  backing; "general" for landscape, products, current usage, news, or opinion.
 
 Question: {question}"""
 
 
+def _norm_evidence(value) -> str:
+    """The model writes free text; state stores exactly two values."""
+    return "academic" if "academic" in str(value).lower() else "general"
+
+
 def plan(state: ResearchState) -> dict:
-    """Decompose the question into an ordered, capped checklist."""
+    """Decompose the question into an ordered, capped checklist.
+
+    Each sub-question also carries the planner's evidence judgment — whether
+    scholarly sources are warranted for THIS sub-question. That one field is
+    what makes source-credibility preference question-aware instead of a
+    fixed domain policy.
+    """
     out = structured(ResearchPlan).invoke(
         PLAN_PROMPT.format(max_subs=MAX_SUB_QUESTIONS, question=state["question"])
     )
     return {
         "sub_questions": [
             SubQuestion(id=i + 1, question=sq["question"],
-                        rationale=sq["rationale"], status="pending")
+                        rationale=sq["rationale"], status="pending",
+                        evidence=_norm_evidence(sq.get("evidence", "")))
             for i, sq in enumerate(out["sub_questions"][:MAX_SUB_QUESTIONS])
         ]
     }
@@ -110,7 +125,14 @@ def read(state: ResearchState) -> dict:
     findings = list(state["findings"])
     added = 0
 
-    for r in state["results"]:
+    # Social/UGC never gets read, even if it slipped past the API exclusion.
+    candidates = [(tools.source_kind(r["url"]), r) for r in state["results"]
+                  if r["url"] not in known and tools.source_kind(r["url"]) != "social"]
+    if sub_q["evidence"] == "academic":
+        # Stable sort: academic first, Tavily relevance as tiebreaker within groups.
+        candidates.sort(key=lambda kr: kr[0] != "academic")
+
+    for kind, r in candidates:
         if added >= READS_PER_SUB_Q:
             break
         if r["url"] in known:
@@ -125,7 +147,7 @@ def read(state: ResearchState) -> dict:
         else:
             text, via = r["content"], "snippet"
         src = Source(id=len(sources) + 1, url=r["url"], title=r["title"],
-                     content=text[:SOURCE_CHAR_LIMIT], via=via)
+                     content=text[:SOURCE_CHAR_LIMIT], via=via, kind=kind)
         sources.append(src)
         notes = structured(PageNotes).invoke(NOTES_PROMPT.format(
             sub_question=sub_q["question"], source_id=src["id"],
@@ -142,6 +164,8 @@ You are judging whether research on one sub-question is sufficient to write
 its section of a briefing.
 
 Sub-question: {sub_question}
+Preferred evidence type for this sub-question: {evidence}
+Sources consulted so far: {source_kinds}
 
 Evidence gathered so far:
 {findings}
@@ -154,6 +178,9 @@ Decide:
 - If insufficient: state in one sentence what is missing, and give
   refined_query — a sharper web search targeting exactly that gap. Use
   different terms than the previous search; never repeat it verbatim.
+- If academic evidence is preferred and no scholarly source appears above,
+  aim the refined query at one (terms like study, research, peer-reviewed,
+  journal, meta-analysis).
 - If sufficient, leave missing and refined_query as empty strings."""
 
 
@@ -172,8 +199,13 @@ def evaluate(state: ResearchState) -> dict:
     sq = state["sub_questions"][state["cursor"]]
     notes = "\n\n".join(f["notes"] for f in state["findings"]
                         if f["sub_q_id"] == sq["id"]) or "None yet."
+    cited = sorted({int(n) for f in state["findings"] if f["sub_q_id"] == sq["id"]
+                    for n in _CITE_RE.findall(f["notes"])})
+    kind_of = {s["id"]: s["kind"] for s in state["sources"]}
+    source_kinds = ", ".join(f"[S{i}] {kind_of.get(i, 'web')}" for i in cited) or "none yet"
     out = structured(Evaluation).invoke(EVALUATE_PROMPT.format(
-        sub_question=sq["question"], findings=notes, last_query=state["last_query"]))
+        sub_question=sq["question"], evidence=sq["evidence"],
+        source_kinds=source_kinds, findings=notes, last_query=state["last_query"]))
 
     can_retry = state["attempts"] < MAX_ATTEMPTS_PER_SUB_Q and out["refined_query"]
     if not out["sufficient"] and can_retry:
@@ -225,7 +257,7 @@ def synthesize(state: ResearchState) -> dict:
     """
     subs = "\n".join(f"{sq['id']}. {sq['question']}  [{sq['status']}]"
                      for sq in state["sub_questions"])
-    srcs = "\n".join(f"[S{s['id']}] {s['title']} — {s['url']}"
+    srcs = "\n".join(f"[S{s['id']}] {s['title']} — {s['url']} ({s['kind']})"
                      for s in state["sources"])
     msg = smart_llm.invoke(SYNTHESIZE_PROMPT.format(
         question=state["question"], sub_questions=subs,
@@ -254,7 +286,8 @@ Judge strictly by outcome:
   know that the draft does not tell them. Nice-to-have additions are not gaps.
   Reporting zero gaps is a perfectly good outcome.
 - Each gap must be a NEW sub-question, independently answerable by a web
-  search — not a rewrite request. At most {max_gaps}."""
+  search — not a rewrite request. At most {max_gaps}.
+- evidence per gap: "academic" if it needs scholarly backing, else "general"."""
 
 
 def reflect(state: ResearchState) -> dict:
@@ -286,7 +319,8 @@ def reflect(state: ResearchState) -> dict:
     start = len(state["sub_questions"])
     appended = state["sub_questions"] + [
         SubQuestion(id=start + i + 1, question=g["question"],
-                    rationale=g["rationale"], status="pending")
+                    rationale=g["rationale"], status="pending",
+                    evidence=_norm_evidence(g.get("evidence", "")))
         for i, g in enumerate(gaps)
     ]
     return {"sub_questions": appended,
@@ -368,9 +402,21 @@ def verify(state: ResearchState) -> dict:
                        f"\"{a['claim']}\" — {a['verdict']}")
         final = final.replace(a["claim"], f"{a['claim']} [unverified]", 1)  # best-effort inline mark
 
+    kind_of = {s["id"]: s["kind"] for s in state["sources"]}
+    unmet_academic = []
+    for sq in state["sub_questions"]:
+        if sq["evidence"] != "academic":
+            continue
+        cited = {int(n) for f in state["findings"] if f["sub_q_id"] == sq["id"]
+                 for n in _CITE_RE.findall(f["notes"])}
+        if cited and not any(kind_of.get(i) == "academic" for i in cited):
+            unmet_academic.append(sq["question"])
+
     limitations = (
         [f"- Evidence ran thin on: {sq['question']}"
          for sq in state["sub_questions"] if sq["status"] == "thin"]
+        + [f"- Scholarly evidence was preferred for '{q}' but only general "
+           f"web sources were found" for q in unmet_academic]
         + [f"- Not covered (research budget spent): {g}" for g in state["open_gaps"]]
         + [f"- Flagged: {f}" for f in flagged]
     )

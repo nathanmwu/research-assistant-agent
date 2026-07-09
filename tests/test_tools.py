@@ -51,3 +51,45 @@ def test_cache_replays_page_fetches(monkeypatch, tmp_path):
     second = tools.read_page("https://a.com/x")
     assert first == second and first is not None
     assert calls == ["https://a.com/x"]  # second call replayed from disk
+
+
+# --- source credibility (Phase 7) -----------------------------------------------
+
+def test_source_kind_is_a_factual_label():
+    k = tools.source_kind
+    assert k("https://www.linkedin.com/pulse/foo") == "social"
+    assert k("https://REDDIT.com/r/x") == "social"          # case-insensitive
+    assert k("https://ies.ed.gov/paper") == "academic"
+    assert k("https://web.mit.edu/x") == "academic"          # subdomain suffix match
+    assert k("https://pmc.ncbi.nlm.nih.gov/articles/1") == "academic"
+    assert k("https://doi.org/10.1000/x") == "academic"
+    assert k("https://someblog.com/post") == "web"           # default bucket
+    assert k("https://notlinkedin.com/x") == "web"           # suffix must not overmatch
+
+
+class _CapturingClient:
+    def __init__(self):
+        self.kwargs = {}
+
+    def search(self, query, **kwargs):
+        self.kwargs = kwargs
+        return {"results": []}
+
+
+def test_search_excludes_ugc_at_the_api(monkeypatch):
+    fake = _CapturingClient()
+    monkeypatch.setattr(tools, "_client", fake)
+    tools.tavily_search("any query")
+    assert "linkedin.com" in fake.kwargs["exclude_domains"]
+    assert "reddit.com" in fake.kwargs["exclude_domains"]
+
+
+def test_cache_key_includes_the_exclusion_list(monkeypatch, tmp_path):
+    # same query + different exclusions -> different results -> must not collide
+    monkeypatch.setenv("CACHE", "1")
+    monkeypatch.setattr(tools, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(tools, "_client", _CapturingClient())
+    tools.tavily_search("same query")
+    monkeypatch.setattr(tools, "UGC_DOMAINS", ("only.example",))
+    tools.tavily_search("same query")
+    assert len(list(tmp_path.glob("search-*.json"))) == 2

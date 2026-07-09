@@ -27,7 +27,8 @@ def _plan_markdown(subs: list[dict], cursor: int) -> str:
     lines = ["#### Research plan"]
     for i, sq in enumerate(subs):
         icon = "[>]" if i == cursor and sq["status"] == "pending" else _STATUS_ICON[sq["status"]]
-        lines.append(f"`{icon}` **{sq['id']}.** {sq['question']}")
+        marker = " *(academic)*" if sq.get("evidence") == "academic" else ""
+        lines.append(f"`{icon}` **{sq['id']}.** {sq['question']}{marker}")
     return "\n\n".join(lines)
 
 
@@ -100,7 +101,9 @@ def main() -> None:
                     f"-> {len(delta['results'])} results")
             elif node == "read":
                 for src in delta["sources"][n_sources:]:
-                    log(f"Read [S{src['id']}] [{src['title']}]({src['url']}) via {src['via']}")
+                    kind = " [academic]" if src["kind"] == "academic" else ""
+                    log(f"Read [S{src['id']}] [{src['title']}]({src['url']}) "
+                        f"via {src['via']}{kind}")
                 n_sources = len(delta["sources"])
             elif node == "evaluate":
                 if delta.get("next_query"):

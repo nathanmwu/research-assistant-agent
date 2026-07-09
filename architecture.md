@@ -45,8 +45,10 @@ class ResearchState(TypedDict):
     final: str                  # draft + flags + Limitations section
     history: list[dict]         # prior Q/briefing pairs, for follow-ups
 
-# SubQuestion = {id, question, rationale, status: pending|answered|thin}
-# Source     = {id, url, title, content, via: playwright|tavily}
+# SubQuestion = {id, question, rationale, status: pending|answered|thin,
+#                evidence: academic|general}  # the planner's per-sub-question call
+# Source     = {id, url, title, content, via: playwright|tavily|snippet,
+#               kind: academic|web}           # factual label; social is never registered
 # Finding    = {sub_q_id, notes}  # bullets w/ inline [S#] and short quotes
 ```
 
@@ -54,11 +56,11 @@ class ResearchState(TypedDict):
 
 ## Nodes
 
-1. **`plan`** (1 LLM call) — decomposes the question into 3–5 sub-questions, each with a one-sentence `rationale`, ordered foundation-first. Sub-questions must be *independently answerable by a web search* — no cross-dependencies, which keeps the loop simple and the queries free. The plan is load-bearing everywhere downstream: it is the search agenda, evaluate's grading rubric, the briefing's outline, and reflection's mutation point.
+1. **`plan`** (1 LLM call) — decomposes the question into 3–5 sub-questions, each with a one-sentence `rationale`, ordered foundation-first. Sub-questions must be *independently answerable by a web search* — no cross-dependencies, which keeps the loop simple and the queries free. Each also carries the planner's `evidence` judgment ("academic" | "general") — whether scholarly sources are warranted for *that* sub-question; this one field is what makes source-credibility preference question-aware instead of a fixed domain policy. The plan is load-bearing everywhere downstream: it is the search agenda, evaluate's grading rubric, the briefing's outline, and reflection's mutation point.
 
 2. **`search`** (0 LLM calls) — query = `next_query` if evaluate set one, else the current sub-question verbatim. Tavily, `max_results=5`, `include_raw_content=True`. No query-generation call: the planner writes searchable sub-questions, so first attempts are free.
 
-3. **`read`** (≤2 LLM calls) — fetches the top 2 unseen results in relevance order (Playwright → trafilatura; falls back to Tavily `raw_content`, then snippet), registers each in `sources`, and immediately **compresses** each page into a `Finding`: bullets relevant to the current sub-question with 1–2 verbatim quotes and `[S#]` refs. Compress-at-read is both the context-blowup fix and what makes the grounding audit reliable — quotes are captured while the page is in context. Raw pages never travel past this node.
+3. **`read`** (≤2 LLM calls) — fetches the top 2 unseen results (Playwright → trafilatura; falls back to Tavily `raw_content`, then snippet), registers each in `sources`, and immediately **compresses** each page into a `Finding`: bullets relevant to the current sub-question with 1–2 verbatim quotes and `[S#]` refs. Compress-at-read is both the context-blowup fix and what makes the grounding audit reliable — quotes are captured while the page is in context. Raw pages never travel past this node. Source credibility (Phase 7) is question-aware, never a fixed policy: social/UGC is excluded at the search API and never read even if it slips through; when the sub-question's `evidence` field says "academic", candidates are stable-sorted academic-first (`source_kind(url)` — a factual label over config domain lists); otherwise Tavily relevance order stands, and the evaluate loop self-corrects junk picks.
 
 4. **`evaluate`** (1 LLM call) — judge and refine in one call: `{sufficient, missing, refined_query}`. Sufficient → mark `answered`, advance cursor. Insufficient with attempts left → store `next_query`. Attempts exhausted → mark `thin` and advance anyway — weak coverage becomes visible output, not an infinite loop.
 
@@ -66,7 +68,7 @@ class ResearchState(TypedDict):
 
 6. **`reflect`** (1 LLM call) — grades the **draft against the original question** (not the research trail — that would measure effort, not outcome). Output: `{answered, gaps}`. Gaps must be material to the original question; each is a new searchable sub-question. Appended gaps re-enter the normal search loop; `cursor` already points at them because it ran off the end of the old plan — zero special-case code. Budget exhausted with gaps remaining → gaps are disclosed in the briefing's Limitations section, never silently dropped.
 
-7. **`verify`** (regex + 1 LLM call) — the grounding guardrail, two layers: (a) mechanical — every `[S#]` must resolve to a registered source, every factual paragraph needs ≥1 citation; deterministic, no model can talk past it. (b) LLM audit — each cited claim vs. the quote-bearing findings: `supported | partial | unsupported`. Failures are **flagged (`⚠ unverified`), not fixed** — no verify→search loop; re-researching at the last mile reopens unbounded work. Writes `final` = draft + flags + Limitations (thin coverage, unresolved gaps, unsupported claims).
+7. **`verify`** (regex + 1 LLM call) — the grounding guardrail, two layers: (a) mechanical — every `[S#]` must resolve to a registered source, every factual paragraph needs ≥1 citation; deterministic, no model can talk past it. (b) LLM audit — each cited claim vs. the quote-bearing findings: `supported | partial | unsupported`. Failures are **flagged (`[unverified]`), not fixed** — no verify→search loop; re-researching at the last mile reopens unbounded work. Writes `final` = draft + flags + Limitations (thin coverage, unresolved gaps, unsupported claims, and unmet academic-evidence preferences — a sub-question that wanted scholarly backing but only found general web sources is disclosed mechanically).
 
 ## Control flow: routers and loops
 
@@ -135,3 +137,4 @@ research-assistant-agent/
 - **Native structured output (Gemini)** — deletes the JSON parse/retry layer entirely; schemas are flat TypedDicts.
 - **All model I/O normalized at the seam** — `llm.py` wraps every call in retry-on-5xx, and `text_of()` flattens the newer models' content-part lists to plain text; no node or UI code ever handles either concern.
 - **Two-tier models** — plumbing judgments (plan/read/evaluate/reflect) run on the lite tier; `synthesize`, the prose the user reads and only 1–2 calls per run, runs on premium flash. Quality where it shows, quota where it's cheap.
+- **Question-aware source credibility** — the planner judges per sub-question whether scholarly evidence is warranted; `source_kind()` labels domains factually (academic/social/web); social is banned outright. Policy comes from judgment, labels come from facts, and shortfalls are disclosed. Zero extra LLM calls.

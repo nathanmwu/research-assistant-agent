@@ -56,7 +56,8 @@ def test_verify_assembles_flags_and_limitations(monkeypatch):
     s = state_with_plan(2, cursor=2)
     s["sub_questions"][1]["status"] = "thin"
     s["open_gaps"] = ["an unanswered gap question"]
-    s["sources"] = [{"id": 1, "url": "u", "title": "t", "content": "c", "via": "tavily"}]
+    s["sources"] = [{"id": 1, "url": "u", "title": "t", "content": "c",
+                     "via": "tavily", "kind": "web"}]
     s["draft"] = "The study found a 73% improvement [S1]. Bogus cite [S7]."
     out = nodes.verify(s)
 
@@ -74,11 +75,36 @@ def test_verify_clean_draft_appends_nothing(monkeypatch):
     s = state_with_plan(2, cursor=2)
     for sq in s["sub_questions"]:
         sq["status"] = "answered"
-    s["sources"] = [{"id": 1, "url": "u", "title": "t", "content": "c", "via": "tavily"}]
+    s["sources"] = [{"id": 1, "url": "u", "title": "t", "content": "c",
+                     "via": "tavily", "kind": "web"}]
     s["draft"] = "A tidy, well-cited claim [S1]."
     out = nodes.verify(s)
     assert out["flagged"] == []
     assert out["final"] == s["draft"]  # no Limitations section when nothing to disclose
+
+
+def _academic_pref_state(source_kind):
+    s = state_with_plan(1, cursor=1, evidence="academic")
+    s["sub_questions"][0]["status"] = "answered"
+    s["sources"] = [{"id": 1, "url": "u", "title": "t", "content": "c",
+                     "via": "tavily", "kind": source_kind}]
+    s["findings"] = [{"sub_q_id": 1, "notes": "- a fact [S1]"}]
+    s["draft"] = "A cited claim [S1]."
+    return s
+
+
+def test_verify_discloses_unmet_academic_preference(monkeypatch):
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"audits": []}))
+    out = nodes.verify(_academic_pref_state("web"))
+    assert "Scholarly evidence was preferred" in out["final"]
+
+
+def test_verify_silent_when_academic_preference_is_met(monkeypatch):
+    monkeypatch.setattr(nodes, "structured",
+                        lambda schema: FakeStructured({"audits": []}))
+    out = nodes.verify(_academic_pref_state("academic"))
+    assert "Scholarly evidence" not in out["final"]
 
 
 # --- layer 2: the live regression (the one live-LLM test in the suite) ----------

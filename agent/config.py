@@ -15,6 +15,21 @@ SMART_MODEL = os.getenv("GEMINI_SMART_MODEL", "gemini-2.5-flash")
 # HEADLESS=0 pops a visible Chromium window per source read (demo/debug mode).
 HEADLESS = os.getenv("HEADLESS", "1") != "0"
 
+# Source credibility (Phase 7). UGC/social never enters a briefing; academic
+# domains are a factual label — the per-sub-question *preference* between
+# academic and general web is the planner's call, not a fixed policy here.
+UGC_DOMAINS = (
+    "linkedin.com", "facebook.com", "reddit.com", "x.com", "twitter.com",
+    "quora.com", "medium.com", "instagram.com", "tiktok.com", "pinterest.com",
+)
+ACADEMIC_DOMAINS = (
+    ".edu", ".gov", ".ac.uk", "doi.org", "ncbi.nlm.nih.gov", "arxiv.org",
+    "nature.com", "science.org", "sciencedirect.com", "springer.com",
+    "wiley.com", "tandfonline.com", "sagepub.com", "jstor.org",
+    "frontiersin.org", "mdpi.com", "plos.org", "ieee.org", "acm.org",
+    "cambridge.org", "academic.oup.com",
+)
+
 # Loop caps. Worst case is knowable before a run: ~21 searches, ~25 LLM calls.
 MAX_SUB_QUESTIONS = 5
 MAX_ATTEMPTS_PER_SUB_Q = 3  # 1 initial + 2 refined searches
